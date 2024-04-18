@@ -72,7 +72,7 @@ jobs:
 
       - name: Build, tag and push Docker image
         id: docker
-        uses: AplinkosMinisterija/reusable-workflows/.github/actions/docker-build-tag-push@main
+        uses: vmvt-devhub/reusable-workflows/.github/actions/docker-build-tag-push@main
         with:
           push: true
           docker-image: ${{inputs.docker-image}}

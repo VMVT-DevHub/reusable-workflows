@@ -1,0 +1,135 @@
+# Based on
+# - https://blog.jannikwempe.com/github-actions-trunk-based-development#heading-a-brief-introduction-to-trunk-based-development
+# - https://blog.derlin.ch/github-actions-reusable-workflow-docker-images
+# - https://github.com/BretFisher/docker-build-workflow/blob/main/.github/workflows/reusable-docker-build.yaml
+
+name: Build, tag & push docker image
+description: Build, tag & push docker image
+
+inputs:
+  docker-image:
+    description: "Optional input to set docker image name. Defaults to current repository"
+    required: false
+    default: ghcr.io/${{ github.repository }}
+  environment:
+    description: "Required input to set environment"
+    required: true
+  docker-context:
+    description: "Optional input to set docker context"
+    required: false
+    default: "."
+  file:
+    description: "Optional input to set path to the Dockerfile"
+    required: false
+  build-args:
+    description: "Optional input to set docker build-time variables"
+    required: false
+    default: ""
+  docker-platforms:
+    description: "Optional input list to set docker target platforms for build. Defaults to linux/amd64"
+    required: false
+    default: "linux/amd64"
+  push:
+    description: "Optional input can be set to specify whether the Docker image should be pushed to the registry. Defaults to false"
+    required: false
+    default: "false"
+  registry-password:
+    description: "Optional input for registry password"
+    default: ${{ github.token }}
+    required: false
+  no-cache:
+    description: "Optional input to not use cache when building the image. Defaults to false"
+    required: false
+    default: "false"
+  cache-from:
+    description: "Optional input to set cache-from. Defaults to type=gha"
+    required: false
+    default: "type=gha"
+  cache-to:
+    description: "Optional input to set cache-to. Defaults to type=gha,mode=max,ignore-error=true"
+    required: false
+    default: "type=gha,mode=max,ignore-error=true"
+
+outputs:
+  version:
+    description: "Generated Docker image version"
+    value: ${{ steps.docker_image.outputs.version }}
+  tags:
+    description: "Generated Docker tags"
+    value: ${{ steps.docker_image.outputs.tags }}
+  labels:
+    description: "Generated Docker labels"
+    value: ${{ steps.docker_image.outputs.labels }}
+  annotations:
+    description: "Generated annotations"
+    value: ${{ steps.docker_image.outputs.annotations }}
+  json:
+    description: "JSON output of tags and labels"
+    value: ${{ steps.docker_image.outputs.json }}
+  bake-file-tags:
+    description: "Bake definition file with tags"
+    value: ${{ steps.docker_image.outputs.bake-file-tags }}
+  bake-file-labels:
+    description: "Bake definition file with labels"
+    value: ${{ steps.docker_image.outputs.bake-file-labels }}
+  bake-file-annotations:
+    description: "Bake definiton file with annotations"
+    value: ${{ steps.docker_image.outputs.bake-file-annotations }}
+  bake-file:
+    description: "Bake definition file with tags and labels"
+    value: ${{ steps.docker_image.outputs.bake-file }}
+
+runs:
+  using: composite
+  steps:
+    - id: environment
+      uses: ASzc/change-string-case-action@v6
+      with:
+        string: ${{inputs.environment}}
+
+    - name: Set up QEMU
+      id: qemu
+      uses: docker/setup-qemu-action@v3
+
+    - name: Setup buildx
+      id: buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Set Docker metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{inputs.docker-image}}
+        tags: |
+          type=ref,event=tag,priority=400
+          type=semver,pattern={{major}}.{{minor}},priority=390
+          type=semver,pattern={{major}},priority=380
+          type=raw,value=${{steps.environment.outputs.lowercase}},enable=${{steps.environment.outputs.lowercase!=''}},priority=300
+          type=raw,value={{branch}},enable={{is_default_branch}},priority=100
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      if: ${{ inputs.push == 'true' && true || false }}
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.registry-password }}
+
+    - name: Build & push Docker image
+      id: docker_image
+      uses: docker/build-push-action@v5
+      with:
+        context: ${{inputs.docker-context}}
+        file: ${{inputs.file}}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        platforms: ${{inputs.docker-platforms}}
+        build-args: ${{inputs.build-args}}
+        push: ${{inputs.push}}
+        builder: ${{ steps.buildx.outputs.name }}
+        no-cache: ${{ inputs.no-cache }}
+        cache-from: ${{ inputs.cache-from }}
+        cache-to: ${{ inputs.cache-to }}
+        pull: true
+        provenance: false
+        sbom: false
